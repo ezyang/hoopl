@@ -32,7 +32,7 @@ import Compiler.Hoopl.Util
 --              DataflowLattice
 -----------------------------------------------------------------------------
 
-data DataflowLattice a = DataflowLattice  
+data DataflowLattice a = DataflowLattice
  { fact_name       :: String          -- Documentation
  , fact_bot        :: a               -- Lattice bottom element
  , fact_join       :: JoinFun a       -- Lattice join plus change flag
@@ -76,7 +76,7 @@ data FwdPass m n f
             , fp_transfer :: FwdTransfer n f
             , fp_rewrite  :: FwdRewrite m n f }
 
-newtype FwdTransfer n f 
+newtype FwdTransfer n f
   = FwdTransfer3 { getFTransfer3 ::
                      ( n C O -> f -> f
                      , n O O -> f -> f
@@ -95,10 +95,10 @@ wrapFR :: (forall e x. (n  e x -> f  -> m  (Maybe (Graph n  e x, FwdRewrite m  n
           )
             -- ^ This argument may assume that any function passed to it
             -- respects fuel, and it must return a result that respects fuel.
-       -> FwdRewrite m  n  f 
+       -> FwdRewrite m  n  f
        -> FwdRewrite m' n' f'      -- see Note [Respects Fuel]
 wrapFR wrap (FwdRewrite3 (f, m, l)) = FwdRewrite3 (wrap f, wrap m, wrap l)
-wrapFR2 
+wrapFR2
   :: (forall e x . (n1 e x -> f1 -> m1 (Maybe (Graph n1 e x, FwdRewrite m1 n1 f1))) ->
                    (n2 e x -> f2 -> m2 (Maybe (Graph n2 e x, FwdRewrite m2 n2 f2))) ->
                    (n3 e x -> f3 -> m3 (Maybe (Graph n3 e x, FwdRewrite m3 n3 f3)))
@@ -140,7 +140,7 @@ noFwdRewrite = FwdRewrite3 (noRewrite, noRewrite, noRewrite)
 noRewrite :: Monad m => a -> b -> m (Maybe c)
 noRewrite _ _ = return Nothing
 
-                               
+
 
 -- | Functions passed to 'mkFRewrite' should not be aware of the fuel supply.
 -- The result returned by 'mkFRewrite' respects fuel.
@@ -181,21 +181,21 @@ distinguishedExitFact g f = maybe g
 type Entries e = MaybeC e [Label]
 
 arfGraph :: forall m n f e x .
-            (NonLocal n, CheckpointMonad m) => FwdPass m n f -> 
+            (NonLocal n, CheckpointMonad m) => FwdPass m n f ->
             Entries e -> Graph n e x -> Fact e f -> m (DG f n e x, Fact x f)
 arfGraph pass entries = graph
   where
-    {- nested type synonyms would be so lovely here 
+    {- nested type synonyms would be so lovely here
     type ARF  thing = forall e x . thing e x -> f        -> m (DG f n e x, Fact x f)
     type ARFX thing = forall e x . thing e x -> Fact e f -> m (DG f n e x, Fact x f)
     -}
     graph ::              Graph n e x -> Fact e f -> m (DG f n e x, Fact x f)
 -- @ start block.tex -2
-    block :: forall e x . 
+    block :: forall e x .
              Block n e x -> f -> m (DG f n e x, Fact x f)
 -- @ end block.tex
 -- @ start node.tex -4
-    node :: forall e x . (ShapeLifter e x) 
+    node :: forall e x . (ShapeLifter e x)
          => n e x -> f -> m (DG f n e x, Fact x f)
 -- @ end node.tex
 -- @ start bodyfun.tex
@@ -206,7 +206,7 @@ arfGraph pass entries = graph
                     -- in the Body; the facts for Labels *in*
                     -- the Body are in the 'DG f n C C'
 -- @ start cat.tex -2
-    cat :: forall e a x f1 f2 f3. 
+    cat :: forall e a x f1 f2 f3.
            (f1 -> m (DG f n e a, f2))
         -> (f2 -> m (DG f n a x, f3))
         -> (f1 -> m (DG f n e x, f3))
@@ -253,7 +253,7 @@ arfGraph pass entries = graph
 
     -- | Compose fact transformers and concatenate the resulting
     -- rewritten graphs.
-    {-# INLINE cat #-} 
+    {-# INLINE cat #-}
 -- @ start cat.tex -2
     cat ft1 ft2 f = do { (g1,f1) <- ft1 f
                        ; (g2,f2) <- ft2 f1
@@ -263,7 +263,7 @@ arfGraph pass entries = graph
             NonLocal thing
          => (thing C x ->        f -> m (DG f n C x, Fact x f))
          -> (thing C x -> Fact C f -> m (DG f n C x, Fact x f))
-    arfx arf thing fb = 
+    arfx arf thing fb =
       arf thing $ fromJust $ lookupFact (entryLabel thing) $ joinInFacts lattice fb
      where lattice = fp_lattice pass
      -- joinInFacts adds debugging information
@@ -307,13 +307,13 @@ data BwdPass m n f
             , bp_transfer :: BwdTransfer n f
             , bp_rewrite  :: BwdRewrite m n f }
 
-newtype BwdTransfer n f 
+newtype BwdTransfer n f
   = BwdTransfer3 { getBTransfer3 ::
                      ( n C O -> f          -> f
                      , n O O -> f          -> f
                      , n O C -> FactBase f -> f
                      ) }
-newtype BwdRewrite m n f 
+newtype BwdRewrite m n f
   = BwdRewrite3 { getBRewrite3 ::
                     ( n C O -> f          -> m (Maybe (Graph n C O, BwdRewrite m n f))
                     , n O O -> f          -> m (Maybe (Graph n O O, BwdRewrite m n f))
@@ -321,15 +321,15 @@ newtype BwdRewrite m n f
                     ) }
 
 wrapBR :: (forall e x .
-                Shape x 
+                Shape x
              -> (n  e x -> Fact x f  -> m  (Maybe (Graph n  e x, BwdRewrite m  n  f )))
              -> (n' e x -> Fact x f' -> m' (Maybe (Graph n' e x, BwdRewrite m' n' f')))
           )
             -- ^ This argument may assume that any function passed to it
             -- respects fuel, and it must return a result that respects fuel.
-       -> BwdRewrite m  n  f 
+       -> BwdRewrite m  n  f
        -> BwdRewrite m' n' f'      -- see Note [Respects Fuel]
-wrapBR wrap (BwdRewrite3 (f, m, l)) = 
+wrapBR wrap (BwdRewrite3 (f, m, l)) =
   BwdRewrite3 (wrap Open f, wrap Open m, wrap Closed l)
 
 wrapBR2 :: (forall e x . Shape x
@@ -371,7 +371,7 @@ noBwdRewrite = BwdRewrite3 (noRewrite, noRewrite, noRewrite)
 
 -- | Functions passed to 'mkBRewrite' should not be aware of the fuel supply.
 -- The result returned by 'mkBRewrite' respects fuel.
-mkBRewrite :: FuelMonad m 
+mkBRewrite :: FuelMonad m
            => (forall e x . n e x -> Fact x f -> m (Maybe (Graph n e x)))
            -> BwdRewrite m n f
 mkBRewrite f = mkBRewrite3 f f f
@@ -382,17 +382,17 @@ mkBRewrite f = mkBRewrite3 f f f
 -----------------------------------------------------------------------------
 
 arbGraph :: forall m n f e x .
-            (NonLocal n, CheckpointMonad m) => BwdPass m n f -> 
+            (NonLocal n, CheckpointMonad m) => BwdPass m n f ->
             Entries e -> Graph n e x -> Fact x f -> m (DG f n e x, Fact e f)
 arbGraph pass entries = graph
   where
-    {- nested type synonyms would be so lovely here 
+    {- nested type synonyms would be so lovely here
     type ARB  thing = forall e x . thing e x -> Fact x f -> m (DG f n e x, f)
     type ARBX thing = forall e x . thing e x -> Fact x f -> m (DG f n e x, Fact e f)
     -}
     graph ::              Graph n e x -> Fact x f -> m (DG f n e x, Fact e f)
     block :: forall e x . Block n e x -> Fact x f -> m (DG f n e x, f)
-    node  :: forall e x . (ShapeLifter e x) 
+    node  :: forall e x . (ShapeLifter e x)
                        => n e x       -> Fact x f -> m (DG f n e x, f)
     body  :: [Label] -> Body n -> Fact C f -> m (DG f n C C, Fact C f)
     cat :: forall e a x info info' info''.
@@ -436,7 +436,7 @@ arbGraph pass entries = graph
 
     -- | Compose fact transformers and concatenate the resulting
     -- rewritten graphs.
-    {-# INLINE cat #-} 
+    {-# INLINE cat #-}
     cat ft1 ft2 f = do { (g2,f2) <- ft2 f
                        ; (g1,f1) <- ft1 f2
                        ; return (g1 `dgSplice` g2, f1) }
@@ -529,7 +529,7 @@ updateFact lat lbls lbl new_fact (cha, fbase)
        = case lookupFact lbl fbase of
            Nothing -> (SomeChange, new_fact_debug)  -- Note [Unreachable blocks]
            Just old_fact -> join old_fact
-         where join old_fact = 
+         where join old_fact =
                  fact_join lat lbl
                    (OldFact old_fact) (NewFact new_fact)
                (_, new_fact_debug) = join (fact_bot lat)
@@ -555,34 +555,34 @@ fixpoint :: forall m n f. (CheckpointMonad m, NonLocal n)
 -- @ start fpimp.tex
 fixpoint direction lat do_block blocks init_fbase
   = do { tx_fb <- loop init_fbase
-       ; return (tfb_rg tx_fb, 
-                 map (fst . fst) tagged_blocks 
+       ; return (tfb_rg tx_fb,
+                 map (fst . fst) tagged_blocks
                     `mapDeleteList` tfb_fbase tx_fb ) }
-    -- The successors of the Graph are the the Labels 
+    -- The successors of the Graph are the the Labels
     -- for which we have facts and which are *not* in
     -- the blocks of the graph
   where
     tagged_blocks = map tag blocks
-    is_fwd = case direction of { Fwd -> True; 
+    is_fwd = case direction of { Fwd -> True;
                                  Bwd -> False }
     tag :: NonLocal t => t C C -> ((Label, t C C), [Label])
-    tag b = ((entryLabel b, b), 
-             if is_fwd then [entryLabel b] 
+    tag b = ((entryLabel b, b),
+             if is_fwd then [entryLabel b]
                         else successors b)
-     -- 'tag' adds the in-labels of the block; 
+     -- 'tag' adds the in-labels of the block;
      -- see Note [TxFactBase invairants]
 
     tx_blocks :: [((Label, Block n C C), [Label])]   -- I do not understand this type
               -> TxFactBase n f -> m (TxFactBase n f)
     tx_blocks []              tx_fb = return tx_fb
-    tx_blocks (((lbl,blk), in_lbls):bs) tx_fb 
+    tx_blocks (((lbl,blk), in_lbls):bs) tx_fb
       = tx_block lbl blk in_lbls tx_fb >>= tx_blocks bs
-     -- "in_lbls" == Labels the block may 
+     -- "in_lbls" == Labels the block may
      --                 _depend_ upon for facts
 
     tx_block :: Label -> Block n C C -> [Label]
              -> TxFactBase n f -> m (TxFactBase n f)
-    tx_block lbl blk in_lbls 
+    tx_block lbl blk in_lbls
         tx_fb@(TxFB { tfb_fbase = fbase, tfb_lbls = lbls
                     , tfb_rg = blks, tfb_cha = cha })
       | is_fwd && not (lbl `mapMember` fbase)
@@ -599,10 +599,10 @@ fixpoint direction lat do_block blocks init_fbase
                     , tfb_cha = cha' } }
       where
         lbls' = lbls `setUnion` setFromList in_lbls
-        
+
 
     loop :: FactBase f -> m (TxFactBase n f)
-    loop fbase 
+    loop fbase
       = do { s <- checkpoint
            ; let init_tx :: TxFactBase n f
                  init_tx = TxFB { tfb_fbase = fbase
@@ -612,10 +612,10 @@ fixpoint direction lat do_block blocks init_fbase
            ; tx_fb <- tx_blocks tagged_blocks init_tx
            ; case tfb_cha tx_fb of
                NoChange   -> return tx_fb
-               SomeChange 
+               SomeChange
                  -> do { restart s
                        ; loop (tfb_fbase tx_fb) } }
--- @ end fpimp.tex           
+-- @ end fpimp.tex
 
 
 {-  Note [TxFactBase invariants]
@@ -656,7 +656,7 @@ iteration.
 Note [Unreachable blocks]
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 A block that is not in the domain of tfb_fbase is "currently unreachable".
-A currently-unreachable block is not even analyzed.  Reason: consider 
+A currently-unreachable block is not even analyzed.  Reason: consider
 constant prop and this graph, with entry point L1:
   L1: x:=3; goto L4
   L2: x:=4; goto L4
@@ -756,7 +756,7 @@ class ShapeLifter e x where
  fwdEntryFact  :: NonLocal n => n e x -> f -> Fact e f
  fwdEntryLabel :: NonLocal n => n e x -> MaybeC e [Label]
  ftransfer :: FwdPass m n f -> n e x -> f -> Fact x f
- frewrite  :: FwdPass m n f -> n e x 
+ frewrite  :: FwdPass m n f -> n e x
            -> f -> m (Maybe (Graph n e x, FwdRewrite m n f))
 -- @ end node.tex
  bwdEntryFact :: NonLocal n => DataflowLattice f -> n e x -> Fact e f -> f
@@ -805,7 +805,7 @@ getFact lat l fb = case lookupFact l fb of Just  f -> f
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 -}
 -- $fuel
--- A value of type 'FwdRewrite' or 'BwdRewrite' /respects fuel/ if 
+-- A value of type 'FwdRewrite' or 'BwdRewrite' /respects fuel/ if
 -- any function contained within the value satisfies the following properties:
 --
 --   * When fuel is exhausted, it always returns 'Nothing'.
@@ -813,7 +813,7 @@ getFact lat l fb = case lookupFact l fb of Just  f -> f
 --   * When it returns @Just g rw@, it consumes /exactly/ one unit
 --     of fuel, and new rewrite 'rw' also respects fuel.
 --
--- Provided that functions passed to 'mkFRewrite', 'mkFRewrite3', 
+-- Provided that functions passed to 'mkFRewrite', 'mkFRewrite3',
 -- 'mkBRewrite', and 'mkBRewrite3' are not aware of the fuel supply,
 -- the results respect fuel.
 --
