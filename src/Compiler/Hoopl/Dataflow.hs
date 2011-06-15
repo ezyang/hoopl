@@ -509,31 +509,42 @@ distinguishedEntryFact g f = maybe g
 -----------------------------------------------------------------------------
 -- @ start txfb.tex
 data TxFactBase n f
-  = TxFB { tfb_fbase :: FactBase f
-         , tfb_rg    :: DG f n C C -- Transformed blocks
+  = TxFB { tfb_fbase :: FactBase (ChangeFlag, f)
+         -- We could technically use DG f n C C to handle this, but
+         -- using a LabelMap makes it a bit clearer.
+         , tfb_rg    :: LabelMap (DG f n C C)
          , tfb_cha   :: ChangeFlag
          , tfb_lbls  :: LabelSet }
 -- @ end txfb.tex
      -- See Note [TxFactBase invariants]
+
 -- @ start update.tex
-updateFact :: DataflowLattice f -> LabelSet
-           -> Label -> f -> (ChangeFlag, FactBase f)
-           -> (ChangeFlag, FactBase f)
+-- Fold function, which folds over new facts and integrates them with an
+-- existing FactBase, keeping track of whether or not another sweep is
+-- necessary.
+updateFact :: DataflowLattice f
+           -> LabelSet  -- labels that have already been processed
+           -> Label     -- label fact is associated with
+           -> f         -- new fact to merge in
+           -- fst is global change flag
+           -> (ChangeFlag, FactBase (ChangeFlag, f))
+           -> (ChangeFlag, FactBase (ChangeFlag, f))
 -- See Note [TxFactBase change flag]
 updateFact lat lbls lbl new_fact (cha, fbase)
-  | NoChange <- cha2     = (cha,        fbase)
-  | lbl `setMember` lbls = (SomeChange, new_fbase)
-  | otherwise            = (cha,        new_fbase)
+  -- No change to fact
+  | NoChange <- local_change = (cha,        fbase)
+  -- Change to fact, and it's for a block we've already processed.
+  | lbl `setMember` lbls     = (SomeChange, new_fbase)
+  -- Change to fact, but it's for a block pending processing.
+  | otherwise                = (cha,        new_fbase)
   where
-    (cha2, res_fact) -- Note [Unreachable blocks]
-       = case lookupFact lbl fbase of
-           Nothing -> (SomeChange, new_fact_debug)  -- Note [Unreachable blocks]
-           Just old_fact -> join old_fact
-         where join old_fact =
-                 fact_join lat lbl
-                   (OldFact old_fact) (NewFact new_fact)
-               (_, new_fact_debug) = join (fact_bot lat)
-    new_fbase = mapInsert lbl res_fact fbase
+    (init_change, old_fact) = fromMaybe (SomeChange, fact_bot lat) (lookupFact lbl fbase)
+    (join_change, res_fact) = fact_join lat lbl (OldFact old_fact) (NewFact new_fact)
+    -- If we've never seen this block before, it needs to be processed.
+    -- Otherwise, it only needs to be reprocessed if its fact changed.
+    local_change | SomeChange <- init_change = SomeChange
+                 | otherwise                 = join_change
+    new_fbase = mapInsert lbl (local_change, res_fact) fbase
 -- @ end update.tex
 
 
@@ -549,15 +560,17 @@ fixpoint :: forall m n f. (CheckpointMonad m, NonLocal n)
  => Direction
  -> DataflowLattice f
  -> (Block n C C -> Fact C f -> m (DG f n C C, Fact C f))
- -> [Block n C C]
+ -> [Block n C C] -- topologically sorted list of blocks to process
  -> (Fact C f -> m (DG f n C C, Fact C f))
 -- @ end fptype.tex
 -- @ start fpimp.tex
 fixpoint direction lat do_block blocks init_fbase
-  = do { tx_fb <- loop init_fbase
-       ; return (tfb_rg tx_fb,
+  = do { -- Always begin by sweeping all blocks
+         let init_fbase_with_flags = mapMap (\x -> (SomeChange, x)) init_fbase
+       ; tx_fb <- loop init_fbase_with_flags mapEmpty
+       ; return (mapFold dgSplice dgnilC (tfb_rg tx_fb),
                  map (fst . fst) tagged_blocks
-                    `mapDeleteList` tfb_fbase tx_fb ) }
+                    `mapDeleteList` mapMap snd (tfb_fbase tx_fb) ) }
     -- The successors of the Graph are the the Labels
     -- for which we have facts and which are *not* in
     -- the blocks of the graph
@@ -570,11 +583,13 @@ fixpoint direction lat do_block blocks init_fbase
              if is_fwd then [entryLabel b]
                         else successors b)
      -- 'tag' adds the in-labels of the block;
-     -- see Note [TxFactBase invairants]
+     -- see Note [TxFactBase invariants]
 
-    tx_blocks :: [((Label, Block n C C), [Label])]   -- I do not understand this type
+    -- A list of tagged blocks:
+    -- [(block label, block), [entry or successor block labels]]
+    tx_blocks :: [((Label, Block n C C), [Label])]
               -> TxFactBase n f -> m (TxFactBase n f)
-    tx_blocks []              tx_fb = return tx_fb
+    tx_blocks [] tx_fb = return tx_fb
     tx_blocks (((lbl,blk), in_lbls):bs) tx_fb
       = tx_block lbl blk in_lbls tx_fb >>= tx_blocks bs
      -- "in_lbls" == Labels the block may
@@ -584,37 +599,55 @@ fixpoint direction lat do_block blocks init_fbase
              -> TxFactBase n f -> m (TxFactBase n f)
     tx_block lbl blk in_lbls
         tx_fb@(TxFB { tfb_fbase = fbase, tfb_lbls = lbls
-                    , tfb_rg = blks, tfb_cha = cha })
+                    , tfb_rg = blkMap , tfb_cha = cha })
       | is_fwd && not (lbl `mapMember` fbase)
       = return (tx_fb {tfb_lbls = lbls'})       -- Note [Unreachable blocks]
+      -- Don't bother processing a node if nothing affecting
+      -- it has changed.
+      | Just (NoChange, _) <- lookupFact lbl fbase
+      = {-# SCC "fixpoint-shortcut" #-}
+        return (tx_fb {tfb_lbls = lbls'})
       | otherwise
-      = do { (rg, out_facts) <- do_block blk fbase
-           ; let (cha', fbase') = mapFoldWithKey
-                                  (updateFact lat lbls')
-                                  (cha,fbase) out_facts
+      = {-# SCC "fixpoint-tx_block" #-}
+        do { (rg, out_facts) <- do_block blk (mapMap snd fbase) -- XXX ugh, allocation
+           -- Update rg for current node
+           ; let blkMap' = mapInsert lbl rg blkMap
+           -- Update fbase for current node
+           ; let fbase' =
+                    case mapLookup lbl fbase of
+                        Nothing -> fbase
+                        Just (_, f) -> mapInsert lbl (NoChange, f) fbase
+
+           -- Merge out_facts with fbase, and determine if
+           -- another sweep is required.
+           ; let (cha', fbase'') = mapFoldWithKey
+                                  (updateFact lat lbls') -- combining function
+                                  (cha, fbase') -- fold base
+                                  out_facts -- map to fold over
            ; return $
                TxFB { tfb_lbls  = lbls'
-                    , tfb_rg    = rg `dgSplice` blks
-                    , tfb_fbase = fbase'
+                    , tfb_fbase = fbase''
+                    , tfb_rg  = blkMap'
                     , tfb_cha = cha' } }
       where
         lbls' = lbls `setUnion` setFromList in_lbls
 
 
-    loop :: FactBase f -> m (TxFactBase n f)
-    loop fbase
-      = do { s <- checkpoint
+    loop :: FactBase (ChangeFlag, f) -> LabelMap (DG f n C C) -> m (TxFactBase n f)
+    loop fbase rgbase
+      = {-# SCC "fixpoint-loop" #-}
+        do { s <- checkpoint
            ; let init_tx :: TxFactBase n f
                  init_tx = TxFB { tfb_fbase = fbase
                                 , tfb_cha   = NoChange
-                                , tfb_rg    = dgnilC
+                                , tfb_rg    = rgbase
                                 , tfb_lbls  = setEmpty }
            ; tx_fb <- tx_blocks tagged_blocks init_tx
            ; case tfb_cha tx_fb of
                NoChange   -> return tx_fb
                SomeChange
                  -> do { restart s
-                       ; loop (tfb_fbase tx_fb) } }
+                       ; loop (tfb_fbase tx_fb) (tfb_rg tx_fb) } }
 -- @ end fpimp.tex
 
 
