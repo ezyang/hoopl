@@ -13,6 +13,10 @@ defuse.tex
 dfopt.bbl
 notesinmargin.tex
 
+*.hi
+*.o
+Setup
+*.prof
 
 timestamp.tex
 
@@ -25,3 +29,5 @@ timestamp.tex
 dfopt.ps
 paper/*.pdf
 dist
+
+tags
